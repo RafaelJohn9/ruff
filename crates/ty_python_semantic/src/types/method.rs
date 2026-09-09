@@ -7,13 +7,9 @@ use crate::{
     types::{
         CallableType, KnownClass, LiteralValueType, LiteralValueTypeKind, Parameter, Parameters,
         PropertyInstanceType, Signature, StringLiteralType, Type, TypeFormType, UnionType,
-        callable::{CallableFunctionProvenance, CallableTypeKind},
-        constraints::ConstraintSet,
-        function::FunctionType,
-        known_instance::InternedConstraintSet,
-        relation::TypeRelationChecker,
-        signatures::CallableSignature,
-        visitor,
+        callable::CallableTypeKind, constraints::ConstraintSet, function::FunctionType,
+        known_instance::InternedConstraintSet, relation::TypeRelationChecker,
+        signatures::CallableSignature, visitor,
     },
 };
 
@@ -102,13 +98,15 @@ impl<'db> BoundMethodType<'db> {
     )]
     pub(crate) fn into_callable_type(self, db: &'db dyn Db) -> CallableType<'db> {
         let function = self.function(db);
+        let env =
+            ProgramEnvironment::from_scope(function.literal(db).last_definition.body_scope(db));
+        let typing_self_type = self.typing_self_type(db);
+        let receiver_type = self.signature_receiver(db);
+
         CallableType::new(
             db,
-            self.bound_signatures(db),
+            self.bound_signatures_with_receiver(db, &env, receiver_type, typing_self_type),
             CallableTypeKind::FunctionLike,
-            CallableFunctionProvenance::from_function_return_annotation(
-                function.has_explicit_return_annotation(db),
-            ),
         )
     }
 
@@ -120,27 +118,16 @@ impl<'db> BoundMethodType<'db> {
         receiver_type: Type<'db>,
         typing_self_type: Type<'db>,
     ) -> CallableType<'db> {
-        let function = self.function(db);
-
         CallableType::new(
             db,
             self.bound_signatures_with_receiver(db, env, receiver_type, typing_self_type),
             CallableTypeKind::FunctionLike,
-            CallableFunctionProvenance::from_function_return_annotation(
-                function.has_explicit_return_annotation(db),
-            ),
         )
     }
 
-    #[salsa::tracked(returns(ref), cycle_initial=|_, _, _| CallableSignature::bottom(), heap_size=ruff_memory_usage::heap_size)]
-    pub(crate) fn bound_signatures(self, db: &'db dyn Db) -> CallableSignature<'db> {
-        let function = self.function(db);
-        let env =
-            ProgramEnvironment::from_scope(function.literal(db).last_definition.body_scope(db));
-        let typing_self_type = self.typing_self_type(db);
-        let receiver_type = self.signature_receiver(db);
-
-        self.bound_signatures_with_receiver(db, &env, receiver_type, typing_self_type)
+    /// Shares the signatures retained in the method's interned callable.
+    pub(crate) fn bound_signatures(self, db: &'db dyn Db) -> &'db CallableSignature<'db> {
+        self.into_callable_type(db).signatures(db)
     }
 
     fn bound_signatures_with_receiver(
@@ -171,9 +158,13 @@ impl<'db> BoundMethodType<'db> {
             }
 
             return CallableSignature::from_overloads(
-                function_signature.overloads.iter().filter_map(|signature| {
-                    signature.bind_self_if_compatible(db, env, receiver_type, typing_self_type)
-                }),
+                function_signature
+                    .overloads
+                    .iter()
+                    .filter_map(|signature| {
+                        signature.bind_self_if_compatible(db, env, receiver_type, typing_self_type)
+                    })
+                    .flat_map(|signature| signature.overloads),
             );
         };
 
@@ -183,12 +174,9 @@ impl<'db> BoundMethodType<'db> {
             None
         };
 
-        CallableSignature::single(
-            specialized
-                .as_ref()
-                .unwrap_or(signature)
-                .bind_self_with_receiver(db, env, Some(receiver_type), Some(typing_self_type)),
-        )
+        specialized
+            .unwrap_or_else(|| CallableSignature::single(signature.clone()))
+            .bind_self_with_receiver(db, env, Some(receiver_type), Some(typing_self_type))
     }
 
     pub(super) fn recursive_type_normalized_impl(
@@ -217,13 +205,19 @@ impl<'c, 'db> TypeRelationChecker<'_, 'c, 'db> {
         source: BoundMethodType<'db>,
         target: BoundMethodType<'db>,
     ) -> ConstraintSet<'db, 'c> {
-        // A bound method is a typically a subtype of itself. However, we must explicitly verify
-        // the subtyping of the underlying function signatures (since they might be specialized
-        // differently), and of the bound self parameter (taking care that parameters, including a
-        // bound self parameter, are contravariant.)
+        // The receiver exposed by `__self__` is an already-captured value, so it is covariant.
+        // However, `Self` can also appear in the remaining parameters, where binding the
+        // receiver must still preserve ordinary callable contravariance.
         self.check_function_pair(db, source.function(db), target.function(db))
             .and(db, self.constraints, || {
-                self.check_type_pair(db, target.self_instance(db), source.self_instance(db))
+                self.check_type_pair(db, source.self_instance(db), target.self_instance(db))
+            })
+            .and(db, self.constraints, || {
+                self.check_callable_signature_pair(
+                    db,
+                    source.bound_signatures(db),
+                    target.bound_signatures(db),
+                )
             })
     }
 }

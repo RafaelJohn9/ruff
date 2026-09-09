@@ -7,7 +7,6 @@
 //! [Lexical analysis]: https://docs.python.org/3/reference/lexical_analysis.html
 
 use std::cmp::Ordering;
-use std::debug_assert_matches;
 
 use unicode_ident::{is_xid_continue, is_xid_start};
 
@@ -120,12 +119,14 @@ impl<'src> Lexer<'src> {
     }
 
     /// Returns the range of the current token.
-    pub(crate) const fn current_range(&self) -> TextRange {
+    #[doc(hidden)]
+    pub const fn current_range(&self) -> TextRange {
         self.current_range
     }
 
     /// Returns the flags for the current token.
-    pub(crate) const fn current_flags(&self) -> TokenFlags {
+    #[doc(hidden)]
+    pub const fn current_flags(&self) -> TokenFlags {
         self.current_flags
     }
 
@@ -1049,7 +1050,10 @@ impl<'src> Lexer<'src> {
     /// Lex a hex/octal/decimal/binary number without a decimal point.
     fn lex_number_radix(&mut self, radix: Radix) -> TokenKind {
         #[cfg(debug_assertions)]
-        debug_assert_matches!(self.cursor.previous().to_ascii_lowercase(), 'x' | 'o' | 'b');
+        {
+            use std::debug_assert_matches;
+            debug_assert_matches!(self.cursor.previous().to_ascii_lowercase(), 'x' | 'o' | 'b');
+        }
 
         let number = self.radix_run(radix);
         if !number.has_digit {
@@ -1615,6 +1619,7 @@ fn is_identifier_continuation(c: char, identifier_is_ascii_only: &mut bool) -> b
 }
 
 /// Create a new [`Lexer`] for the given source code and [`Mode`].
+#[doc(hidden)]
 pub fn lex(source: &str, mode: Mode) -> Lexer<'_> {
     Lexer::new(source, mode, TextSize::default())
 }

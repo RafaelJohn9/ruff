@@ -1219,7 +1219,7 @@ python-version = "3.12"
 ```
 
 ```py
-type Recursive = int | Recursive
+type Recursive = int | Recursive  # error: [cyclic-type-alias-definition]
 
 class C:
     value: Recursive = 1
@@ -1942,6 +1942,31 @@ class Decorated:
 bound = Decorated().method
 reveal_type(bound)  # revealed: Decorator[(value: str)]
 bound(1)  # error: [invalid-argument-type]
+```
+
+### Static getters, setters and deleters
+
+```py
+class Descriptor:
+    @staticmethod
+    def __get__(descriptor: object, instance: object, owner: type | None = None) -> int:
+        return 1
+
+    @staticmethod
+    def __set__(instance: object, value: int) -> None: ...
+    @staticmethod
+    def __delete__(instance: object) -> None: ...
+
+class Owner:
+    value = Descriptor()
+
+owner = Owner()
+reveal_type(owner.value)  # revealed: int
+reveal_type(Owner.value)  # revealed: int
+owner.value = 1
+del owner.value
+
+owner.value = "wrong"  # error: [invalid-assignment] "Expected `int`, found `Literal["wrong"]`"
 ```
 
 [descriptors]: https://docs.python.org/3/howto/descriptor.html

@@ -329,7 +329,7 @@ impl Options {
             }
             ValueSource::ScriptMetadata(_) => SysPrefixPathOrigin::ScriptMetadataSetting,
             ValueSource::Editor => SysPrefixPathOrigin::Editor,
-            ValueSource::UvWorkspace => SysPrefixPathOrigin::UvWorkspace,
+            ValueSource::UvMetadata => SysPrefixPathOrigin::UvMetadata,
         };
 
         PythonEnvironment::new(
@@ -611,7 +611,7 @@ fn python_version_from_config(
                 Span::from(*file).with_optional_range(ranged_version.range()),
             ),
             ValueSource::Editor => PythonVersionSource::Editor,
-            ValueSource::UvWorkspace => PythonVersionSource::UvWorkspace,
+            ValueSource::UvMetadata => PythonVersionSource::UvMetadata,
         },
     }
 }
@@ -741,9 +741,9 @@ fn unsupported_inferred_python_version_diagnostic(
             SubDiagnosticSeverity::Info,
             "The version was inferred from your editor.",
         )),
-        PythonVersionSource::UvWorkspace => diagnostic.sub(SubDiagnostic::new(
+        PythonVersionSource::UvMetadata => diagnostic.sub(SubDiagnostic::new(
             SubDiagnosticSeverity::Info,
-            "The version was provided by uv workspace metadata.",
+            "The version was provided by uv metadata.",
         )),
         PythonVersionSource::Default => diagnostic.sub(SubDiagnostic::new(
             SubDiagnosticSeverity::Info,
@@ -1164,7 +1164,7 @@ impl Rules {
                 ValueSource::ScriptMetadata(_) => LintSource::ScriptMetadata,
                 ValueSource::Cli => LintSource::Cli,
                 ValueSource::Editor => LintSource::Editor,
-                ValueSource::UvWorkspace => LintSource::UvWorkspace,
+                ValueSource::UvMetadata => LintSource::UvMetadata,
             };
 
             let mut set_lint_level = |lint| {
@@ -1541,7 +1541,7 @@ pub struct TerminalOptions {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct AnalysisOptions {
     /// Whether ty should use strict narrowing for unspecialized generic classes in
-    /// `isinstance()` and `issubclass()` checks, as well as `match` class patterns.
+    /// `isinstance()` and `issubclass()` checks, `match` class patterns, and `TypeIs` checks.
     ///
     /// When enabled, ty narrows to the top materialization of the class. For example,
     /// `isinstance(value, list)` narrows a value of type `object` to `Top[list[Unknown]]`,
@@ -2417,9 +2417,9 @@ impl OptionDiagnostic {
                 SubDiagnosticSeverity::Info,
                 "The {value_label} was specified in the editor settings.",
             )),
-            ValueSource::UvWorkspace => self.sub(SubDiagnostic::new(
+            ValueSource::UvMetadata => self.sub(SubDiagnostic::new(
                 SubDiagnosticSeverity::Info,
-                format!("The {value_label} was provided by uv workspace metadata."),
+                format!("The {value_label} was provided by uv metadata."),
             )),
         }
     }
